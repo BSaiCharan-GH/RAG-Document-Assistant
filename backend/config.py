@@ -16,7 +16,7 @@ def _get_env(name: str, default: str = "") -> str:
 
 class Settings:
     GEMINI_API_KEY: str = _get_env("GEMINI_API_KEY")
-    GEMINI_MODEL: str = _get_env("GEMINI_MODEL", "gemini-2.0-flash")
+    GEMINI_MODEL: str = _get_env("GEMINI_MODEL", "gemini-3.6-flash")
     CHROMA_PATH: str = _get_env("CHROMA_PATH", str(BASE_DIR / "data" / "chroma"))
     UPLOAD_PATH: str = _get_env("UPLOAD_PATH", str(BASE_DIR / "data" / "uploads"))
     EMBEDDING_MODEL: str = _get_env("EMBEDDING_MODEL", "all-MiniLM-L6-v2")

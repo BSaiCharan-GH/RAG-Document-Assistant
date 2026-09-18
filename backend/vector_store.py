@@ -96,3 +96,10 @@ class VectorStore:
 
     def has_documents(self) -> bool:
         return self.collection.count() > 0
+
+    def has_document(self, document_id: str) -> bool:
+        result = self.collection.get(
+            where={"document_id": document_id},
+            include=["ids"],
+        )
+        return bool(result.get("ids", []))

@@ -14,3 +14,4 @@ venv/
 # OS / editor
 .DS_Store
 .vscode/
+.ipynb_checkpoints/

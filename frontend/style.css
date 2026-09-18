@@ -231,6 +231,12 @@ input {
   margin-top: 6px;
 }
 
+.doc-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 .doc-status {
   display: inline-flex;
   align-items: center;

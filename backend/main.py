@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
-from typing import List
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,7 +31,7 @@ app = FastAPI(title="PDF RAG Assistant", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -81,7 +79,7 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
     stored_filename = f"{file_hash}.pdf"
     target_path = upload_subdir / stored_filename
 
-    if target_path.exists():
+    if target_path.exists() or vector_store.has_document(file_hash):
         logger.info("Duplicate PDF detected: %s", safe_name)
         raise HTTPException(status_code=409, detail="This document has already been uploaded.")
 
@@ -94,24 +92,22 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
             raise HTTPException(status_code=400, detail="The uploaded PDF does not contain readable text.")
 
         chunks = chunk_text(extracted_text)
-        chunk_texts = []
-        chunk_metadatas = []
-        chunk_embeddings = []
+        chunk_texts = [chunk.text for chunk in chunks]
+        chunk_metadatas = [
+            {
+                "document_id": file_hash,
+                "filename": safe_name,
+                "page": chunk.page,
+                "chunk_id": f"{file_hash}_{index}",
+                "source": "uploaded_pdf",
+            }
+            for index, chunk in enumerate(chunks)
+        ]
+        chunk_embeddings = embedding_service.embed_texts(chunk_texts)
 
-        for index, chunk in enumerate(chunks):
-            chunk_texts.append(chunk.text)
-            chunk_metadatas.append(
-                {
-                    "document_id": file_hash,
-                    "filename": safe_name,
-                    "page": chunk.page,
-                    "chunk_id": f"{file_hash}_{index}",
-                    "source": "uploaded_pdf",
-                }
-            )
-            chunk_embeddings.append(embedding_service.embed_query(chunk.text))
-
-        vector_store.add_document(file_hash, safe_name, chunk_texts, chunk_metadatas, chunk_embeddings)
+        vector_store.add_document(
+            file_hash, safe_name, chunk_texts, chunk_metadatas, chunk_embeddings
+        )
         logger.info("Ingestion complete: %s pages=%s chunks=%s", safe_name, page_count, len(chunks))
         return UploadResponse(
             status="success",
@@ -120,6 +116,13 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
             pages=page_count,
             chunks_created=len(chunks),
         )
+    except HTTPException:
+        if target_path.exists():
+            try:
+                target_path.unlink()
+            except OSError:
+                pass
+        raise
     except Exception as exc:
         logger.exception("Error processing uploaded PDF")
         if target_path.exists():
@@ -186,8 +189,6 @@ def delete_document(document_id: str) -> JSONResponse:
 
     return JSONResponse({"status": "deleted", "document_id": document_id})
 
-
-app.mount("/frontend", StaticFiles(directory=str(STATIC_DIR)), name="frontend")
 
 
 @app.exception_handler(HTTPException)

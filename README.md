@@ -1,187 +1,193 @@
-# PDF RAG Assistant
+# Intelligent RAG Document Assistant
 
-- PDF question-answering service built with FastAPI, ChromaDB, sentence-transformers, PyPDF, and Gemini. The application ingests uploaded PDFs, stores text chunks and vector embeddings locally, retrieves the most relevant chunks for a query, and uses Gemini to answer questions strictly from the retrieved context.
-
-## Overview
-
-This project follows a complete retrieval-augmented generation pipeline:
-
-PDF → text extraction → chunking → embedding → ChromaDB → similarity retrieval → Gemini → FastAPI API → frontend UI
+A local document question-answering service built with FastAPI, ChromaDB, sentence-transformers, PyPDF, and Gemini. Upload a PDF, index it into a persistent vector store, retrieve the most relevant chunks for a question, and generate an answer using only the retrieved document context.
 
 ## Architecture
 
-- Backend: FastAPI REST API in the `backend` package
-- Frontend: plain HTML, CSS, and JavaScript in the `frontend` folder
-- Vector database: ChromaDB persisted locally under `data/chroma`
-- Upload storage: local file storage under `data/uploads`
-- Embedding model: `all-MiniLM-L6-v2` via `sentence-transformers`
-- LLM: Gemini via the Google GenAI SDK
+```text
+PDF upload
+   ↓
+PyPDF text extraction
+   ↓
+Page-aware chunking
+   ↓
+all-MiniLM-L6-v2 embeddings (batch)
+   ↓
+ChromaDB (persistent local vector store)
+   ↓
+Semantic retrieval
+   ↓
+Gemini answer generation
+   ↓
+FastAPI REST API
+   ↓
+HTML / CSS / JavaScript UI
+```
 
-## Folder structure
+## Features
+
+- PDF upload with file-size and extension validation.
+- SHA-256 duplicate-document detection.
+- Page-aware text extraction and chunking.
+- Batch embedding during ingestion for better performance.
+- Persistent ChromaDB storage.
+- Configurable retrieval count, chunk size, and overlap.
+- Gemini answers constrained to retrieved document context.
+- Indexed-document listing and deletion.
+- Source chunks displayed with filename, page, and retrieval distance.
+- FastAPI Swagger documentation.
+- Frontend rendering that treats document/model content as text instead of injecting it as HTML.
+
+## Project structure
 
 ```text
-pdf-rag-service/
+RAG-Document-Assistant/
 ├── backend/
 │   ├── __init__.py
-│   ├── main.py
 │   ├── config.py
-│   ├── models.py
-│   ├── rag.py
 │   ├── embeddings.py
-│   ├── vector_store.py
-│   └── pdf_processor.py
+│   ├── main.py
+│   ├── models.py
+│   ├── pdf_processor.py
+│   ├── rag.py
+│   └── vector_store.py
 ├── frontend/
+│   ├── app.js
 │   ├── index.html
-│   ├── style.css
-│   └── app.js
+│   └── style.css
 ├── data/
-│   ├── uploads/
-│   └── chroma/
+│   ├── chroma/
+│   └── uploads/
 ├── .env
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
-├── README.md
-└── .venv/
+└── README.md
 ```
 
 ## Requirements
 
-- Python 3.10+
-- Windows 10 or 11
-- VS Code
+- Python 3.10 or newer
+- VS Code or another code editor
 - A Gemini API key
+- Internet access for the first download of the embedding model and Gemini requests
 
-## Installation
+## Windows setup
 
-Open PowerShell in the project directory and create a virtual environment:
+Open PowerShell in the project root:
 
 ```powershell
-cd path\to\project
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-```
-
-Install dependencies:
-
-```powershell
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## Creating .env
+## Configure Gemini
 
-Create a `.env` file in the project root based on `.env.example`:
-
-```env
-GEMINI_API_KEY=your_key_here
-GEMINI_MODEL=gemini-2.0-flash
-CHROMA_PATH=./data/chroma
-UPLOAD_PATH=./data/uploads
-EMBEDDING_MODEL=all-MiniLM-L6-v2
-DEFAULT_TOP_K=4
-CHUNK_SIZE=800
-CHUNK_OVERLAP=150
-MAX_UPLOAD_SIZE_MB=20
-MAX_QUERY_LENGTH=500
-```
-
-## Adding the Gemini API key
-
-Set your actual Gemini API key in `.env`:
-
-```env
-GEMINI_API_KEY=your_real_api_key_here
-```
-
-Do not commit `.env` to source control. It is ignored by `.gitignore`.
-
-## Starting the service
-
-From the project root:
+Create `.env` in the project root by copying `.env.example`:
 
 ```powershell
-.venv\Scripts\Activate.ps1
+Copy-Item .env.example .env
+```
+
+Then edit `.env` and set:
+
+```env
+GEMINI_API_KEY=your_new_api_key_here
+GEMINI_MODEL=gemini-3.6-flash
+```
+
+If your Gemini account exposes a different model, set `GEMINI_MODEL` to that model name instead. Never put the API key in frontend files or commit `.env`.
+
+## Start the service
+
+From the project root, with the virtual environment active:
+
+```powershell
 uvicorn backend.main:app --reload
 ```
 
-The API is then available at:
+Open:
 
-- UI: http://127.0.0.1:8000/
-- Swagger: http://127.0.0.1:8000/docs
-- Health: http://127.0.0.1:8000/health
+- UI: `http://127.0.0.1:8000/`
+- Swagger: `http://127.0.0.1:8000/docs`
+- Health: `http://127.0.0.1:8000/health`
 
-## Using the upload feature
+## REST API
 
-1. Open the UI at http://127.0.0.1:8000/
-2. Drag and drop a PDF or click Browse.
-3. Click Upload PDF.
-4. The document is validated, saved locally, chunked, embedded, and indexed.
+### `GET /health`
 
-## Asking questions
+Checks that the service is running.
 
-1. Type a question in the input box.
-2. Click Ask.
-3. The backend retrieves relevant chunks from ChromaDB and asks Gemini to answer using only that context.
+### `POST /upload`
 
-## REST API endpoints
+Accepts a PDF as multipart form data, extracts its text, creates chunks, embeds them in a batch, and stores them in ChromaDB.
 
-- `GET /health`
-- `POST /upload`
-- `POST /query`
-- `GET /documents`
-- `DELETE /documents/{document_id}`
-- `GET /docs` (Swagger UI)
-
-## Example API requests
-
-### Health check
+Example PowerShell request:
 
 ```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/health"
+curl.exe -X POST "http://127.0.0.1:8000/upload" -F "file=@example.pdf"
 ```
 
-### Upload a PDF
+### `POST /query`
 
-```powershell
-curl -X POST "http://127.0.0.1:8000/upload" -F "file=@example.pdf"
+Request body:
+
+```json
+{
+  "query": "Explain the Transformer architecture.",
+  "top_k": 4
+}
 ```
 
-### Ask a question
+### `GET /documents`
 
-```powershell
-curl -X POST "http://127.0.0.1:8000/query" -H "Content-Type: application/json" -d '{"query":"Explain the architecture in this document","top_k":4}'
+Returns all indexed documents.
+
+### `DELETE /documents/{document_id}`
+
+Deletes the selected document from ChromaDB and local upload storage.
+
+## RAG behavior
+
+The service first retrieves the requested number of semantically similar chunks. Gemini receives the question and those retrieved chunks as context. The prompt instructs Gemini not to rely on information outside that context and to state that the answer is not available in the provided document when the retrieved context is insufficient.
+
+## Data and secrets
+
+The following are intentionally ignored by Git:
+
+```text
+.env
+.venv/
+data/chroma/
+data/uploads/
 ```
 
-### List documents
-
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/documents"
-```
-
-### Delete a document
-
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/documents/<document_id>" -Method Delete
-```
-
-## Swagger documentation
-
-Swagger UI is available automatically via FastAPI at:
-
-http://127.0.0.1:8000/docs
+Do not commit API keys, uploaded PDFs, or the local ChromaDB database.
 
 ## Troubleshooting
 
-- If the model fails to load, ensure `sentence-transformers` has downloaded the `all-MiniLM-L6-v2` model.
-- If Gemini returns errors, verify the API key in `.env` and the model name.
-- If uploads fail, confirm the file is a valid PDF and under the upload size limit.
-- If the UI does not load, run the app from the project root with `uvicorn backend.main:app --reload`.
-- If ChromaDB is empty, upload a PDF first.
+### Gemini model error
 
-## Duplicate document behavior
+Check `GEMINI_API_KEY` and `GEMINI_MODEL` in `.env`. The model must be available to the Gemini API key you are using.
 
-If the same PDF is uploaded again, the service detects it using a SHA-256 hash and reports a duplicate instead of indexing it twice. This avoids unnecessary duplicate embeddings and keeps the local index clean.
+### Embedding model download
 
-## Notes on retrieval and answer quality
+The first startup downloads `all-MiniLM-L6-v2`. Subsequent starts reuse the local model cache.
 
-The generated answer is only based on the retrieved context. If the retrieved chunks do not contain sufficient information, the app explicitly states that the answer is not available in the provided document.
+### No documents available
+
+Upload a PDF through the UI or `POST /upload` before calling `POST /query`.
+
+### Port already in use
+
+Start on another port:
+
+```powershell
+uvicorn backend.main:app --reload --port 8001
+```
+
+## Development notes
+
+The application initializes the embedding model, ChromaDB collection, and Gemini client once when the FastAPI process starts. Uploaded chunks are embedded in a batch rather than making one embedding call per chunk.
