@@ -105,7 +105,7 @@ If your Gemini account exposes a different model, set `GEMINI_MODEL` to that mod
 From the project root, with the virtual environment active:
 
 ```powershell
-uvicorn backend.main:app --reload
+python -m uvicorn backend.main:app --reload
 ```
 
 Open:
