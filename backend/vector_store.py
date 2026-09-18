@@ -29,7 +29,7 @@ class VectorStore:
         if not chunks:
             return 0
 
-        existing_ids = self.collection.get(where={"document_id": document_id}, include=["ids"]).get("ids", [])
+        existing_ids = self.collection.get(where={"document_id": document_id}).get("ids", [])
         if existing_ids:
             self.collection.delete(ids=existing_ids)
 
@@ -88,7 +88,7 @@ class VectorStore:
         return sorted(documents, key=lambda entry: entry["filename"].lower())
 
     def delete_document(self, document_id: str) -> bool:
-        ids = self.collection.get(where={"document_id": document_id}, include=["ids"]).get("ids", [])
+        ids = self.collection.get(where={"document_id": document_id}).get("ids", [])
         if not ids:
             return False
         self.collection.delete(ids=ids)
@@ -99,7 +99,6 @@ class VectorStore:
 
     def has_document(self, document_id: str) -> bool:
         result = self.collection.get(
-            where={"document_id": document_id},
-            include=["ids"],
-        )
+                where={"document_id": document_id},
+            )
         return bool(result.get("ids", []))
