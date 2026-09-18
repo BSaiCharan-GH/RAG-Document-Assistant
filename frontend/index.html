@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF RAG Assistant</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>PDF RAG Assistant</h1>
+          <p>Ask questions about your documents using Retrieval-Augmented Generation.</p>
+        </div>
+      </header>
+
+      <main class="content-grid">
+        <section class="card upload-card">
+          <h2>Upload PDF</h2>
+          <div id="dropZone" class="drop-zone" tabindex="0">
+            <input id="fileInput" type="file" accept="application/pdf" hidden />
+            <div class="drop-zone-inner">
+              <span class="upload-icon">⬆</span>
+              <p>Drag and drop a PDF here</p>
+              <button type="button" id="browseButton" class="secondary-btn">Browse</button>
+            </div>
+          </div>
+          <div class="upload-controls">
+            <span id="selectedFileName">No file selected</span>
+            <button id="uploadButton" class="primary-btn" type="button">Upload PDF</button>
+          </div>
+          <div id="uploadStatus" class="status-message hidden"></div>
+          <div id="uploadResult" class="upload-result hidden"></div>
+        </section>
+
+        <section class="card docs-card">
+          <div class="section-header">
+            <h2>Indexed Documents</h2>
+            <button id="refreshDocsButton" class="secondary-btn" type="button">Refresh</button>
+          </div>
+          <div id="documentsList" class="documents-list"></div>
+        </section>
+
+        <section class="card query-card">
+          <h2>Ask a Question</h2>
+          <div class="question-box">
+            <textarea id="questionInput" rows="4" placeholder="Ask something about the uploaded document..."></textarea>
+            <div class="query-actions">
+              <button id="askButton" class="primary-btn" type="button">Ask</button>
+            </div>
+          </div>
+          <div id="queryStatus" class="status-message hidden"></div>
+        </section>
+
+        <section class="card answer-card">
+          <h2>Answer</h2>
+          <div id="answerContent" class="answer-content empty">Your answer will appear here.</div>
+        </section>
+
+        <section class="card sources-card">
+          <h2>Sources</h2>
+          <div id="sourcesList" class="sources-list empty">No sources yet.</div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
