@@ -1,4 +1,4 @@
-# Intelligent RAG Document Assistant
+# REST API based RAG Document Assistant
 
 A local document question-answering service built with FastAPI, ChromaDB, sentence-transformers, PyPDF, and Gemini. Upload a PDF, index it into a persistent vector store, retrieve the most relevant chunks for a question, and generate an answer using only the retrieved document context.
 
