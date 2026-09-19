@@ -1,267 +1,818 @@
-# REST API based RAG Document Assistant
+# Agentic RAG Document Assistant
 
-A local document question-answering service built with FastAPI, ChromaDB, sentence-transformers, PyPDF, and Gemini. The retrieval flow now uses a multi-stage pipeline: query processing, dense retrieval, candidate expansion, reranking, post-retrieval filtering, and final context selection before Gemini generates the final answer.
+An intelligent document question-answering system that combines Retrieval-Augmented Generation (RAG), agentic decision-making, local document retrieval, web search, and evidence evaluation.
 
-## Architecture
+The system does not blindly search documents or the web for every question. A LangGraph-based agent analyzes each query and decides whether the answer should come from:
+
+- **DOCUMENT** — uploaded documents only
+- **WEB** — current information from the web using Tavily
+- **HYBRID** — uploaded documents combined with web information
+
+It then evaluates the collected evidence, performs additional retrieval when required, and generates a grounded answer with source information.
+
+---
+
+## Features
+
+### Agentic Source Decision Making
+
+The system dynamically determines the most appropriate information source for each query.
 
 ```text
 User Query
     ↓
-Pre-Retrieval
+Question Analysis
     ↓
-Query Expansion
+Source Decision
+    ├── DOCUMENT
+    ├── WEB
+    └── HYBRID
+    ↓
+Evidence Retrieval
+    ↓
+Evidence Evaluation
+    ↓
+Sufficient?
+   ├── Yes → Generate Answer
+   └── No  → Refine / Retrieve Again
+```
+
+The decision considers factors such as:
+
+- Whether the question refers to uploaded documents
+- Whether current or external information is required
+- Availability of relevant document evidence
+- Whether web information is necessary
+- Whether the retrieved evidence is sufficient
+
+---
+
+## Document Question Answering
+
+Users can upload PDF documents and ask questions about their contents.
+
+The document pipeline performs:
+
+```text
+PDF Upload
+    ↓
+Text Extraction
+    ↓
+Text Cleaning
+    ↓
+Chunking
+    ↓
+Embedding Generation
+    ↓
+ChromaDB
+    ↓
+Semantic Retrieval
+    ↓
+Reranking
+    ↓
+Relevant Context
+```
+
+The system preserves document metadata such as:
+
+- Filename
+- Page number
+- Chunk identifier
+- Retrieval score
+- Reranker score
+
+---
+
+## Web Search with Tavily
+
+For questions requiring current or external information, the agent can use Tavily web search.
+
+Example:
+
+```text
+"What is the latest version of Python?"
+        ↓
+      WEB
+        ↓
+  Tavily Search
+        ↓
+   Web Sources
+        ↓
+Evidence Evaluation
+        ↓
+      Answer
+```
+
+The web search component provides:
+
+- Search results
+- Source titles
+- URLs
+- Domains
+- Relevant snippets
+- Current web information
+
+Web sources are displayed separately from uploaded-document sources so users can understand where information originated.
+
+---
+
+## Hybrid Retrieval
+
+Some questions require both the user's documents and external information.
+
+Example:
+
+> According to my uploaded document, how does this technology work today?
+
+The agent can determine that both sources are necessary.
+
+```text
+                    User Query
+                       ↓
+                 Source Decision
+                       ↓
+                    HYBRID
+                   /       \
+                  ↓         ↓
+             ChromaDB     Tavily
+             Documents      Web
+                  \         /
+                   ↓       ↓
+                 Evidence
+                    ↓
+              Evidence Check
+                    ↓
+              Grounded Answer
+```
+
+The final response can distinguish between information obtained from uploaded documents and information obtained from the web.
+
+---
+
+# Agentic Workflow
+
+The application uses a graph-based workflow built with LangGraph.
+
+```text
+START
+  ↓
+Analyze Question
+  ↓
+Decide Source
+  ↓
+Execute Retrieval
+  ├───────────────┐
+  ↓               ↓
+Documents        Tavily
+  ↓               ↓
+  └───────┬───────┘
+          ↓
+Evaluate Evidence
+          ↓
+   Evidence Sufficient?
+       /          \
+     Yes           No
+      ↓             ↓
+Generate Answer   Refine Query
+      ↑             ↓
+      └──── Retrieve Again
+          ↓
+         END
+```
+
+The agent maintains state throughout the workflow, including:
+
+- User question
+- Retrieval queries
+- Retrieved document chunks
+- Web search results
+- Selected source
+- Tools used
+- Number of iterations
+- Evidence sufficiency
+- Final answer
+- Source information
+
+---
+
+# Source Selection
+
+The agent supports three retrieval modes.
+
+| Mode | Purpose | Example |
+|---|---|---|
+| `DOCUMENT` | Answer using uploaded documents | "According to the uploaded textbook, explain attention." |
+| `WEB` | Retrieve current or external information | "What is the latest Python release?" |
+| `HYBRID` | Combine document and web evidence | "Compare the technology in my document with its current implementation." |
+
+The selected source mode is exposed to the user through the interface.
+
+---
+
+# Advanced Document Retrieval
+
+The document retrieval system uses a multi-stage retrieval pipeline rather than directly using the first few vector search results.
+
+```text
+User Query
+    ↓
+Query Processing
     ↓
 Dense Retrieval
     ↓
 Candidate Pool
     ↓
-Cross-Encoder Re-Ranking
+Cross-Encoder Reranking
     ↓
-Post-Retrieval Filtering
+Duplicate Removal
+    ↓
+Relevance Filtering
+    ↓
+Context Optimization
     ↓
 Final Context
-    ↓
-Gemini
-    ↓
-Answer + Ranked Sources
 ```
 
-## Advanced retrieval pipeline
+### Dense Retrieval
 
-### 1. Pre-retrieval
+The system uses Sentence Transformers to perform semantic similarity search.
 
-The system preserves the original user question and creates retrieval variants only when they add usefulness. This stage normalizes whitespace, removes redundant formatting, validates the input, and prevents empty queries. The original question is always preserved for the final Gemini answer, while the expanded variants are used only for retrieval.
-
-### 2. Query expansion
-
-The lightweight expansion logic keeps simple factual questions short and avoids unnecessary noise. For longer or more descriptive queries, it creates a few compact keyword-based variants for the dense search stage. All of this happens before ChromaDB retrieval.
-
-### 3. Dense retrieval
-
-The embedding model remains `all-MiniLM-L6-v2`, and ChromaDB remains the persistent vector database. Dense search uses cosine distance from ChromaDB, and the app converts it to a similarity value using:
+Default embedding model:
 
 ```text
-dense_similarity = 1 - dense_distance
+sentence-transformers/all-MiniLM-L6-v2
 ```
 
-A larger candidate pool is retrieved first, then the results are merged, deduplicated, and reranked.
+### Candidate Retrieval
 
-### 4. Candidate retrieval and reranking
-
-The system retrieves a configurable candidate pool, such as 20 chunks, for each query variant. Results are merged by `chunk_id` and the best dense match for each chunk is kept. After dense retrieval, the candidate list is sent to a local cross-encoder using `cross-encoder/ms-marco-MiniLM-L-6-v2`. The cross-encoder receives the original user query and the candidate text, and returns a relevance score.
-
-### 5. Post-retrieval processing
-
-The post-retrieval stage removes duplicate chunk IDs, filters near-duplicate content, removes clearly irrelevant chunks using the configured reranker threshold, preserves useful page diversity when possible, and selects the final top-k results while staying within `MAX_CONTEXT_CHARS`.
-
-### 6. Final context selection
-
-Only the final, reranked, filtered top-k chunks are passed to Gemini. The candidate pool is never sent to the model, and irrelevant chunks are excluded before generation.
-
-### 7. Gemini generation
-
-Gemini is used only as the final answer generator. It receives the original user question and the final context. It must answer using only the retrieved context and respond with:
+A larger candidate pool is retrieved initially.
 
 ```text
-The answer is not available in the provided document.
+Candidate Top K = 20
 ```
 
-when the context is insufficient.
+### Cross-Encoder Reranking
 
-## Features
+Candidates are reranked using:
 
-- PDF upload with file-size and extension validation.
-- SHA-256 duplicate-document detection.
-- Page-aware text extraction and chunking.
-- Batch embedding during ingestion for better performance.
-- Persistent ChromaDB storage.
-- Multi-stage retrieval pipeline with query normalization, expansion, dense search, reranking, and filtering.
-- Configurable candidate and final top-k values, reranker threshold, and max context size.
-- Gemini answers constrained to the final retrieved context only.
-- Indexed-document listing and deletion.
-- Source chunks displayed with filename, page, dense similarity, reranker score, and retrieved text.
-- FastAPI Swagger documentation.
-- Frontend rendering that treats document/model content as text instead of injecting it as HTML.
+```text
+cross-encoder/ms-marco-MiniLM-L-6-v2
+```
 
-## Project structure
+This allows the system to evaluate the relationship between the query and retrieved passages more precisely than vector similarity alone.
+
+### Final Context
+
+Only the most relevant results are passed into the answer-generation stage.
+
+```text
+Final Top K = 4
+```
+
+---
+
+# Evidence Evaluation
+
+The agent evaluates whether the retrieved information is sufficient before generating the final response.
+
+If the evidence is insufficient, the agent can:
+
+- Refine the retrieval query
+- Search again
+- Expand the retrieval process
+- Use another information source when appropriate
+- Perform another evidence evaluation cycle
+
+This prevents the system from treating the first retrieval result as automatically sufficient.
+
+---
+
+# Query Expansion
+
+When the original query does not retrieve enough useful information, the agent can generate an improved retrieval query.
+
+Example:
+
+```text
+Original:
+"Explain the architecture."
+
+Expanded:
+"Transformer architecture components attention feed-forward
+network layer normalization positional encoding"
+```
+
+The expanded query is then sent through the retrieval pipeline.
+
+---
+
+# Source Provenance
+
+The system keeps track of the sources used to generate an answer.
+
+### Document Sources
+
+Document results include information such as:
+
+```text
+Filename
+Page
+Chunk ID
+Dense similarity
+Reranker score
+Relevant text
+```
+
+### Web Sources
+
+Web results include:
+
+```text
+Title
+URL
+Domain
+Snippet
+```
+
+This allows users to inspect the underlying information used by the system.
+
+---
+
+# Technology Stack
+
+## Backend
+
+- Python
+- FastAPI
+- Pydantic
+- LangChain
+- LangGraph
+- Google Gemini
+- ChromaDB
+- Sentence Transformers
+- Cross-Encoder
+
+## Web Search
+
+- Tavily
+
+## Frontend
+
+- Streamlit
+
+## Document Processing
+
+- PyPDF
+
+## Machine Learning
+
+- Sentence Transformers
+- Dense embeddings
+- Cross-encoder reranking
+
+---
+
+# Architecture
+
+```text
+┌─────────────────────────────┐
+│       Streamlit UI          │
+│                             │
+│  Upload PDF / Ask Question  │
+└──────────────┬──────────────┘
+               │
+               ↓
+┌─────────────────────────────┐
+│          FastAPI            │
+│                             │
+│  API / Upload / Query       │
+└──────────────┬──────────────┘
+               │
+               ↓
+┌─────────────────────────────┐
+│       LangGraph Agent       │
+│                             │
+│ Analyze → Decide → Retrieve │
+│              ↓              │
+│       Evaluate Evidence     │
+└───────┬───────────┬─────────┘
+        │           │
+        ↓           ↓
+┌────────────┐ ┌──────────────┐
+│ ChromaDB   │ │    Tavily    │
+│            │ │              │
+│ Documents  │ │ Web Search   │
+└─────┬──────┘ └──────┬───────┘
+      │               │
+      └───────┬───────┘
+              ↓
+      ┌───────────────┐
+      │    Evidence   │
+      │    Evaluation │
+      └───────┬───────┘
+              ↓
+      ┌───────────────┐
+      │ Answer        │
+      │ Generation    │
+      └───────────────┘
+```
+
+---
+
+# Project Structure
 
 ```text
 RAG-Document-Assistant/
+│
 ├── backend/
-│   ├── __init__.py
-│   ├── config.py
-│   ├── embeddings.py
 │   ├── main.py
-│   ├── models.py
-│   ├── pdf_processor.py
-│   ├── query_processor.py
-│   ├── rag.py
+│   ├── agent.py
+│   ├── agent_state.py
+│   ├── agent_tools.py
 │   ├── retrieval.py
-│   └── vector_store.py
+│   ├── rag.py
+│   ├── query_processor.py
+│   ├── embeddings.py
+│   ├── vector_store.py
+│   ├── pdf_processor.py
+│   ├── models.py
+│   └── config.py
+│
 ├── frontend/
-│   ├── app.js
-│   ├── index.html
-│   └── style.css
+│   └── app.py
+│
 ├── data/
-│   ├── chroma/
-│   └── uploads/
-├── .env
+│   ├── uploads/
+│   └── chroma/
+│
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
 └── README.md
 ```
 
-## Requirements
+---
 
-- Python 3.10 or newer
-- VS Code or another code editor
-- A Gemini API key
-- Internet access for the first download of the embedding model, reranker, and Gemini requests
+# Installation
 
-## Windows setup
+## 1. Clone the Repository
 
-Open PowerShell in the project root:
+```bash
+git clone https://github.com/BSaiCharan-GH/RAG-Document-Assistant.git
+cd RAG-Document-Assistant
+```
 
-```powershell
+## 2. Create the Environment
+
+Using Conda:
+
+```bash
+conda create -n rag-assistant python=3.11
+conda activate rag-assistant
+```
+
+Or using a Python virtual environment:
+
+```bash
 python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
+.venv\Scripts\activate
+```
+
+## 3. Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-## Configure environment variables
+---
 
-Create `.env` in the project root by copying `.env.example`:
+# Environment Configuration
 
-```powershell
-Copy-Item .env.example .env
-```
+Create a `.env` file in the project root.
 
-Then set the values you need, including:
+Example:
 
 ```env
-GEMINI_API_KEY=your_new_api_key_here
-GEMINI_MODEL=gemini-3.6-flash
-EMBEDDING_MODEL=all-MiniLM-L6-v2
+GEMINI_API_KEY=your_gemini_api_key
+TAVILY_API_KEY=your_tavily_api_key
+
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
+
 CANDIDATE_TOP_K=20
 FINAL_TOP_K=4
-RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
 RERANKER_THRESHOLD=0.0
 MAX_CONTEXT_CHARS=12000
+
+AGENT_MAX_ITERATIONS=5
+AGENT_TEMPERATURE=0.1
+
+WEB_SEARCH_MAX_RESULTS=5
+WEB_SEARCH_TOPIC=general
+WEB_SEARCH_DEPTH=advanced
 ```
 
-Never put API keys in frontend files or commit `.env`.
+Never commit the `.env` file to GitHub.
 
-## Start the service
+---
 
-From the project root, with the virtual environment active:
+# Running the Application
+
+The application consists of a FastAPI backend and Streamlit frontend.
+
+## Start FastAPI
 
 ```powershell
-python -m uvicorn backend.main:app --reload
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8001
 ```
 
-Open:
+## Start Streamlit
 
-- UI: `http://127.0.0.1:8000/`
-- Swagger: `http://127.0.0.1:8000/docs`
-- Health: `http://127.0.0.1:8000/health`
-
-## REST API
-
-### `GET /health`
-
-Checks that the service is running.
-
-### `POST /upload`
-
-Accepts a PDF as multipart form data, extracts its text, creates chunks, embeds them in a batch, and stores them in ChromaDB.
-
-Example PowerShell request:
+In another terminal:
 
 ```powershell
-curl.exe -X POST "http://127.0.0.1:8000/upload" -F "file=@example.pdf"
+python -m streamlit run frontend/app.py
 ```
 
-### `POST /query`
+The Streamlit interface provides:
 
-Request body:
+- PDF document upload
+- Uploaded document management
+- Question answering
+- Source selection display
+- Retrieval information
+- Web source display
+- Document source display
+- Final grounded answers
 
-```json
-{
-  "query": "Explain the Transformer architecture.",
-  "top_k": 4
-}
-```
+---
 
-The API response includes:
+# Example Queries
 
-```json
-{
-  "question": "Explain the Transformer architecture.",
-  "answer": "...",
-  "retrieval": {
-    "candidate_count": 20,
-    "final_count": 4,
-    "retrieval_queries": ["Explain the Transformer architecture."]
-  },
-  "retrieved_chunks": [
-    {
-      "chunk_id": "...",
-      "filename": "example.pdf",
-      "page": 10,
-      "dense_distance": 0.23,
-      "dense_similarity": 0.77,
-      "reranker_score": 4.12,
-      "text": "..."
-    }
-  ]
-}
-```
-
-### `GET /documents`
-
-Returns all indexed documents.
-
-### `DELETE /documents/{document_id}`
-
-Deletes the selected document from ChromaDB and local upload storage.
-
-## Data and secrets
-
-The following are intentionally ignored by Git:
+## Document Only
 
 ```text
-.env
-.venv/
-data/chroma/
-data/uploads/
+According to the uploaded textbook, explain the transformer architecture.
 ```
 
-Do not commit API keys, uploaded PDFs, or the local ChromaDB database.
+Expected source:
 
-## Troubleshooting
-
-### Gemini model error
-
-Check `GEMINI_API_KEY` and `GEMINI_MODEL` in `.env`. The model must be available to the Gemini API key you are using.
-
-### Embedding or reranker model download
-
-The first startup downloads `all-MiniLM-L6-v2` and the cross-encoder reranker. Subsequent starts reuse the local model cache.
-
-### No documents available
-
-Upload a PDF through the UI or `POST /upload` before calling `POST /query`.
-
-### Port already in use
-
-Start on another port:
-
-```powershell
-uvicorn backend.main:app --reload --port 8001
+```text
+DOCUMENT
 ```
 
-## Development notes
+---
 
-The application initializes the embedding model, reranker, ChromaDB collection, and Gemini client once when the FastAPI process starts. Uploaded chunks are embedded in a batch rather than making one embedding call per chunk, and retrieval now uses a modular stage-based pipeline for easier improvement later.
+## Web Only
+
+```text
+What is the latest version of Python?
+```
+
+Expected source:
+
+```text
+WEB
+```
+
+---
+
+## Hybrid
+
+```text
+According to my uploaded document, how does this technology compare with its current implementation?
+```
+
+Expected source:
+
+```text
+HYBRID
+```
+
+---
+
+## Query Requiring Additional Retrieval
+
+```text
+Explain the advantages of the architecture discussed in the document.
+```
+
+If the initial retrieval does not provide enough evidence, the agent can refine the search before producing the answer.
+
+---
+
+# API
+
+The FastAPI backend provides endpoints for document management and question answering.
+
+Typical functionality includes:
+
+```text
+GET    /health
+GET    /documents
+POST   /upload
+DELETE /documents/{document_id}
+POST   /query
+```
+
+A query response contains the generated answer together with agent and retrieval metadata.
+
+Example:
+
+```json
+{
+  "question": "Explain the transformer architecture.",
+  "answer": "...",
+  "source": {
+    "mode": "document",
+    "reason_code": "document_specific"
+  },
+  "agent": {
+    "iterations": 2,
+    "tools_used": [
+      "search_documents",
+      "expand_query"
+    ]
+  },
+  "retrieval": {
+    "queries": [
+      "Explain the transformer architecture"
+    ],
+    "candidate_count": 20,
+    "final_count": 4
+  },
+  "retrieved_chunks": [],
+  "web_sources": []
+}
+```
+
+---
+
+# Security
+
+The application is designed to avoid exposing sensitive configuration through the frontend or source repository.
+
+Important practices:
+
+- API keys are stored in environment variables.
+- `.env` is excluded from Git.
+- Uploaded files are processed locally.
+- File names are sanitized.
+- Duplicate documents are detected using file hashing.
+- User queries are validated using Pydantic models.
+- Retrieval limits prevent unnecessarily large context windows.
+- Web search results are treated as external evidence rather than trusted system instructions.
+
+---
+
+# Error Handling
+
+The system handles common failures such as:
+
+- Invalid PDF uploads
+- Empty documents
+- Duplicate documents
+- Missing API keys
+- Failed embedding generation
+- Vector database errors
+- Web search failures
+- Empty retrieval results
+- Insufficient evidence
+- Agent iteration limits
+- Invalid user queries
+
+If web search fails, the application can continue using available document evidence when appropriate.
+
+---
+
+# Performance Considerations
+
+The system balances retrieval quality and computational cost.
+
+### Local Embeddings
+
+Document embeddings are generated locally using Sentence Transformers.
+
+### Candidate Retrieval
+
+A larger candidate pool is retrieved before reranking.
+
+```text
+20 candidates
+      ↓
+Cross-Encoder
+      ↓
+4 final passages
+```
+
+### Context Limiting
+
+The amount of context passed to the language model is limited to prevent unnecessarily large prompts.
+
+### Agent Iteration Limit
+
+The agent has a maximum number of iterations to prevent uncontrolled retrieval loops.
+
+---
+
+# Limitations
+
+The system currently depends on:
+
+- Quality of uploaded documents
+- Quality of semantic retrieval
+- Cross-encoder ranking quality
+- Availability of the language model
+- Availability and quality of web search results
+- Accuracy of external web sources
+
+Web information can change over time, and retrieved web content should therefore be interpreted according to its source and publication context.
+
+---
+
+# Future Improvements
+
+Potential extensions include:
+
+- More advanced query decomposition
+- Multiple-document reasoning
+- Page-level document retrieval
+- Better duplicate and semantic similarity detection
+- Additional web tools
+- Source credibility analysis
+- Improved evidence conflict resolution
+- Conversation memory
+- Streaming agent execution
+- Authentication
+- User-specific document collections
+- Retrieval and answer-quality evaluation benchmarks
+- Agent execution tracing
+- Automated retrieval evaluation
+
+---
+
+# Design Principles
+
+### 1. Retrieval Before Generation
+
+The language model should answer using retrieved evidence rather than relying solely on its internal knowledge.
+
+### 2. Agentic Decision Making
+
+The system determines which information source is appropriate instead of applying a single fixed retrieval strategy to every query.
+
+### 3. Evidence Sufficiency
+
+Retrieval results are evaluated before the final answer is generated.
+
+### 4. Source Transparency
+
+Users can see whether an answer was generated from documents, web information, or both.
+
+### 5. Iterative Retrieval
+
+The agent can refine its search when the first retrieval attempt is insufficient.
+
+### 6. Separation of Concerns
+
+Document processing, retrieval, agent orchestration, web search, API handling, and frontend presentation are maintained as separate components.
+
+---
+
+# Project Goal
+
+The goal of this project is to build a production-oriented agentic retrieval system that goes beyond traditional fixed-pipeline RAG.
+
+Traditional RAG:
+
+```text
+Question
+   ↓
+Vector Search
+   ↓
+LLM
+   ↓
+Answer
+```
+
+Agentic RAG:
+
+```text
+Question
+   ↓
+Analyze
+   ↓
+Decide
+   ↓
+Retrieve
+   ↓
+Evaluate
+   ↓
+Refine if necessary
+   ↓
+Generate
+   ↓
+Provide Sources
+```
+
+The system combines private document knowledge with current web information while maintaining explicit source provenance throughout the answer-generation process.
