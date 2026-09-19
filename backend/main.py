@@ -7,6 +7,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from backend.agent import AgenticRAGService
 from backend.config import settings
 from backend.embeddings import EmbeddingService
 from backend.models import (
@@ -45,6 +46,7 @@ vector_store = VectorStore()
 embedding_service = EmbeddingService()
 retrieval_service = RetrievalService(vector_store=vector_store, embedding_service=embedding_service)
 rag_service = RAGService(vector_store=vector_store, embedding_service=embedding_service, retrieval_service=retrieval_service)
+agent_service = AgenticRAGService(vector_store=vector_store, embedding_service=embedding_service, retrieval_service=retrieval_service, rag_service=rag_service)
 
 
 
@@ -137,16 +139,14 @@ async def query_documents(payload: QueryRequest) -> QueryResponse:
         raise HTTPException(status_code=404, detail="No indexed documents available. Upload a PDF first.")
 
     try:
-        retrieved, retrieval_meta = rag_service.retrieve_context(payload.query, payload.top_k)
-        context_texts = [item["text"] for item in retrieved]
-        answer = rag_service.generate_answer(payload.query, context_texts)
+        agent_result = agent_service.run(payload.query, payload.top_k)
         return QueryResponse(
             question=payload.query,
-            answer=answer,
+            answer=agent_result.get("answer", "The answer is not available in the provided document."),
             retrieval=RetrievalSummary(
-                candidate_count=int(retrieval_meta.get("candidate_count", len(retrieved))),
-                final_count=int(retrieval_meta.get("final_count", len(retrieved))),
-                retrieval_queries=[str(item) for item in retrieval_meta.get("retrieval_queries", [payload.query])],
+                candidate_count=int(agent_result.get("retrieval", {}).get("candidate_count", 0)),
+                final_count=int(agent_result.get("retrieval", {}).get("final_count", 0)),
+                retrieval_queries=[str(item) for item in agent_result.get("retrieval", {}).get("retrieval_queries", [payload.query])],
             ),
             retrieved_chunks=[
                 RetrievedChunk(
@@ -158,7 +158,7 @@ async def query_documents(payload: QueryRequest) -> QueryResponse:
                     reranker_score=float(item["reranker_score"]) if item.get("reranker_score") is not None else None,
                     text=item.get("text", ""),
                 )
-                for item in retrieved
+                for item in agent_result.get("retrieved_chunks", [])
             ],
         )
     except ValueError as exc:
