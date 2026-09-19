@@ -185,14 +185,26 @@ if ask_button and question.strip():
             st.session_state["last_query"] = payload.get("question", question.strip())
             st.session_state["last_retrieval"] = payload.get("retrieval", {})
             st.session_state["last_sources"] = payload.get("retrieved_chunks", [])
+            st.session_state["last_source"] = payload.get("source", {})
+            st.session_state["last_web_sources"] = payload.get("web_sources", [])
         except Exception as exc:
             st.error(f"Query failed: {exc}")
             st.session_state["last_answer"] = ""
             st.session_state["last_query"] = question.strip()
             st.session_state["last_retrieval"] = {}
             st.session_state["last_sources"] = []
+            st.session_state["last_source"] = {}
+            st.session_state["last_web_sources"] = []
 
 if "last_answer" in st.session_state and st.session_state["last_answer"]:
+    source = st.session_state.get("last_source", {})
+    source_mode = str(source.get("mode", "document")).lower()
+    source_labels = {
+        "document": "DOCUMENTS",
+        "web": "WEB SEARCH",
+        "hybrid": "DOCUMENTS + WEB",
+    }
+    st.info(f"Source strategy: {source_labels.get(source_mode, source_mode.upper())}\n\n{source.get('explanation', '')}")
     st.subheader("Answer")
     st.markdown(st.session_state["last_answer"])
 
@@ -230,6 +242,18 @@ if "last_answer" in st.session_state and st.session_state["last_answer"]:
                 st.write(chunk.get("text", ""))
     else:
         st.info("No sources were returned for this query.")
+
+    web_sources = st.session_state.get("last_web_sources", [])
+    if web_sources:
+        st.subheader("Web Sources")
+        for index, source in enumerate(web_sources, start=1):
+            title = source.get("title") or source.get("domain") or "Web source"
+            domain = source.get("domain", "")
+            snippet = source.get("snippet", "")
+            url = source.get("url", "")
+            st.markdown(f"**{index}. {title}**  \n{domain}  \n{snippet}")
+            if url:
+                st.link_button("Open source", url)
 
 if not health_ok:
     st.warning("The backend is currently unavailable. Start the FastAPI service and confirm the API URL.")

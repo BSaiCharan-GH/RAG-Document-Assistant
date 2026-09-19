@@ -32,3 +32,12 @@ def test_hybrid_question_routes_to_hybrid():
         has_documents=True,
     )
     assert decision["mode"] == "hybrid"
+
+
+def test_external_market_question_routes_to_web():
+    service = AgenticRAGService.__new__(AgenticRAGService)
+    decision = service._decide_source_mode(
+        "Tell me something about the Indian stock market.",
+        has_documents=True,
+    )
+    assert decision["mode"] == "web"

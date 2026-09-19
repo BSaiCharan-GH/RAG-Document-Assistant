@@ -7,7 +7,11 @@ class AgentState(TypedDict):
     question: str
     top_k: int
     messages: List[Any]
+    source_mode: str
+    source_reason_code: str
+    source_explanation: str
     retrieved_chunks: List[Dict[str, Any]]
+    web_sources: List[Dict[str, Any]]
     retrieval_meta: Dict[str, Any]
     answer: str
     iterations: int

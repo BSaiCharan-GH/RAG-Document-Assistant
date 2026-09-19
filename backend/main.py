@@ -11,6 +11,7 @@ from backend.agent import AgenticRAGService
 from backend.config import settings
 from backend.embeddings import EmbeddingService
 from backend.models import (
+    AgentStatus,
     DocumentListResponse,
     DocumentSummary,
     HealthResponse,
@@ -18,7 +19,9 @@ from backend.models import (
     QueryResponse,
     RetrievalSummary,
     RetrievedChunk,
+    SourceDecision,
     UploadResponse,
+    WebSource,
 )
 from backend.pdf_processor import compute_file_hash, ensure_upload_dirs, extract_pdf_text, sanitize_filename, chunk_text
 from backend.rag import RAGService
@@ -135,14 +138,13 @@ async def query_documents(payload: QueryRequest) -> QueryResponse:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
     if len(payload.query.strip()) > settings.MAX_QUERY_LENGTH:
         raise HTTPException(status_code=400, detail=f"Query exceeds {settings.MAX_QUERY_LENGTH} characters.")
-    if not vector_store.has_documents():
-        raise HTTPException(status_code=404, detail="No indexed documents available. Upload a PDF first.")
-
     try:
         agent_result = agent_service.run(payload.query, payload.top_k)
         return QueryResponse(
             question=payload.query,
             answer=agent_result.get("answer", "The answer is not available in the provided document."),
+            source=SourceDecision(**agent_result.get("source", {})),
+            agent=AgentStatus(**agent_result.get("agent", {})),
             retrieval=RetrievalSummary(
                 candidate_count=int(agent_result.get("retrieval", {}).get("candidate_count", 0)),
                 final_count=int(agent_result.get("retrieval", {}).get("final_count", 0)),
@@ -160,6 +162,7 @@ async def query_documents(payload: QueryRequest) -> QueryResponse:
                 )
                 for item in agent_result.get("retrieved_chunks", [])
             ],
+            web_sources=[WebSource(**item) for item in agent_result.get("web_sources", [])],
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
