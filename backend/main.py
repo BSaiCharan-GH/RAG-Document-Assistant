@@ -5,8 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 
 from backend.config import settings
 from backend.embeddings import EmbeddingService
@@ -39,7 +38,6 @@ app.add_middleware(
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR / "frontend"
 UPLOAD_DIR = Path(settings.UPLOAD_PATH)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -48,18 +46,11 @@ embedding_service = EmbeddingService()
 retrieval_service = RetrievalService(vector_store=vector_store, embedding_service=embedding_service)
 rag_service = RAGService(vector_store=vector_store, embedding_service=embedding_service, retrieval_service=retrieval_service)
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok", service="PDF RAG API")
-
-
-@app.get("/")
-def serve_frontend() -> FileResponse:
-    index_file = STATIC_DIR / "index.html"
-    return FileResponse(index_file)
 
 
 @app.post("/upload", response_model=UploadResponse)
