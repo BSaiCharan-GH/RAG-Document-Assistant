@@ -15,6 +15,17 @@ class QueryRequest(BaseModel):
     top_k: int = Field(default=4, ge=1, le=20)
 
 
+class SourceDecision(BaseModel):
+    mode: str = Field(default="document")
+    reason_code: str = Field(default="document_specific")
+    explanation: str = Field(default="Using uploaded documents.")
+
+
+class AgentStatus(BaseModel):
+    iterations: int = 0
+    tools_used: List[str] = Field(default_factory=list)
+
+
 class RetrievalSummary(BaseModel):
     candidate_count: int
     final_count: int
@@ -31,11 +42,22 @@ class RetrievedChunk(BaseModel):
     text: str
 
 
+class WebSource(BaseModel):
+    title: str = ""
+    url: str = ""
+    domain: str = ""
+    snippet: str = ""
+    source_type: str = "web"
+
+
 class QueryResponse(BaseModel):
     question: str
     answer: str
+    source: SourceDecision = Field(default_factory=lambda: SourceDecision())
+    agent: AgentStatus = Field(default_factory=AgentStatus)
     retrieval: RetrievalSummary
-    retrieved_chunks: List[RetrievedChunk]
+    retrieved_chunks: List[RetrievedChunk] = Field(default_factory=list)
+    web_sources: List[WebSource] = Field(default_factory=list)
 
 
 class DocumentSummary(BaseModel):

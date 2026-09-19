@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict, List
 
 from langchain_core.tools import tool
+from tavily import TavilyClient
 
 from backend.config import settings
 from backend.query_processor import QueryProcessor
@@ -37,20 +38,14 @@ def _chunk_summary(chunks: List[Dict[str, Any]], meta: Dict[str, Any]) -> str:
 def build_tools(retrieval_service: Any, vector_store: Any):
     @tool
     def search_documents(query: str, top_k: int = 4) -> str:
-        """Search the indexed PDFs for the most relevant passages for a user query."""
+        """Search the local indexed PDFs for the most relevant passages using the project's advanced retrieval pipeline."""
         chunks, meta = retrieval_service.retrieve(query, top_k)
         return _chunk_summary(chunks, meta)
 
     @tool
     def search_specific_document(document_id: str, query: str, top_k: int = 4) -> str:
-        """Search within one specific document using the same retrieval stack."""
+        """Search within one specific uploaded document using the same retrieval stack as the main collection."""
         if not document_id:
-            return json.dumps({"chunks": [], "candidate_count": 0, "final_count": 0, "retrieval_queries": [query]})
-
-        payload = vector_store.collection.get(where={"document_id": document_id}, include=["documents", "metadatas", "distances"])
-        docs = payload.get("documents", []) or []
-        metadatas = payload.get("metadatas", []) or []
-        if not docs:
             return json.dumps({"chunks": [], "candidate_count": 0, "final_count": 0, "retrieval_queries": [query]})
 
         query_embedding = retrieval_service.embedding_service.embed_query(query)
@@ -62,6 +57,8 @@ def build_tools(retrieval_service: Any, vector_store: Any):
         chunks: List[Dict[str, Any]] = []
         for idx, text in enumerate(documents):
             metadata = metadatas[idx] if idx < len(metadatas) else {}
+            if metadata.get("document_id") != document_id:
+                continue
             distance = float(distances[idx]) if idx < len(distances) else 0.0
             chunks.append(
                 {
@@ -78,15 +75,47 @@ def build_tools(retrieval_service: Any, vector_store: Any):
         return _chunk_summary(chunks, meta)
 
     @tool
+    def search_web(query: str, max_results: int | None = None) -> str:
+        """Search the live web using Tavily and return structured, source-backed results."""
+        if not settings.TAVILY_API_KEY:
+            return json.dumps({"results": [], "error": "TAVILY_API_KEY is not configured."})
+
+        client = TavilyClient(api_key=settings.TAVILY_API_KEY)
+        response = client.search(
+            query=query,
+            search_depth=settings.WEB_SEARCH_DEPTH,
+            topic=settings.WEB_SEARCH_TOPIC,
+            max_results=max_results or settings.WEB_SEARCH_MAX_RESULTS,
+            include_answer=True,
+            include_raw_content=False,
+        )
+        results = response.get("results", []) if isinstance(response, dict) else []
+        payload = {
+            "results": [
+                {
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "domain": item.get("url", "").split("//")[-1].split("/")[0] if item.get("url") else "",
+                    "snippet": item.get("content", "") or item.get("snippet", ""),
+                    "content": item.get("content", "") or item.get("snippet", ""),
+                    "source_type": "web",
+                }
+                for item in results
+            ],
+            "answer": response.get("answer", "") if isinstance(response, dict) else "",
+        }
+        return json.dumps(payload, ensure_ascii=False)
+
+    @tool
     def expand_query(query: str) -> str:
-        """Generate a few retrieval variants to improve recall for underspecified queries."""
+        """Generate a few retrieval variants to improve recall when the original query is ambiguous or broad."""
         processor = QueryProcessor(max_length=settings.MAX_QUERY_LENGTH)
         _, variants = processor.process(query)
         return json.dumps({"expanded_queries": variants}, ensure_ascii=False)
 
     @tool
     def get_document_info(document_id: str) -> str:
-        """Get the metadata for a specific uploaded document, including chunk count and pages."""
+        """Return metadata for a specific uploaded document, including chunk count and pages."""
         if not document_id:
             return json.dumps({"document_id": document_id, "filename": "", "chunks_count": 0, "pages": []})
 
@@ -105,4 +134,4 @@ def build_tools(retrieval_service: Any, vector_store: Any):
         }
         return json.dumps(payload, ensure_ascii=False)
 
-    return [search_documents, search_specific_document, expand_query, get_document_info]
+    return [search_documents, search_specific_document, search_web, expand_query, get_document_info]

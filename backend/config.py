@@ -30,8 +30,12 @@ class Settings:
     CHUNK_OVERLAP: int = int(_get_env("CHUNK_OVERLAP", "150"))
     MAX_UPLOAD_SIZE_MB: int = int(_get_env("MAX_UPLOAD_SIZE_MB", "20"))
     MAX_QUERY_LENGTH: int = int(_get_env("MAX_QUERY_LENGTH", "500"))
-    AGENT_MODEL: str = _get_env("AGENT_MODEL", "gemini-2.5-flash")
-    AGENT_MAX_ITERATIONS: int = int(_get_env("AGENT_MAX_ITERATIONS", "4"))
+    TAVILY_API_KEY: str = _get_env("TAVILY_API_KEY")
+    WEB_SEARCH_MAX_RESULTS: int = int(_get_env("WEB_SEARCH_MAX_RESULTS", "5"))
+    WEB_SEARCH_TOPIC: str = _get_env("WEB_SEARCH_TOPIC", "general")
+    WEB_SEARCH_DEPTH: str = _get_env("WEB_SEARCH_DEPTH", "advanced")
+    AGENT_MODEL: str = _get_env("AGENT_MODEL", "gemini-3.6-flash")
+    AGENT_MAX_ITERATIONS: int = int(_get_env("AGENT_MAX_ITERATIONS", "5"))
     AGENT_TEMPERATURE: float = float(_get_env("AGENT_TEMPERATURE", "0.2"))
 
 
