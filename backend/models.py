@@ -12,20 +12,29 @@ class HealthResponse(BaseModel):
 
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500)
-    top_k: int = Field(default=4, ge=1, le=10)
+    top_k: int = Field(default=4, ge=1, le=20)
+
+
+class RetrievalSummary(BaseModel):
+    candidate_count: int
+    final_count: int
+    retrieval_queries: List[str]
 
 
 class RetrievedChunk(BaseModel):
     chunk_id: str
     filename: str
     page: Optional[int] = None
-    distance: float
+    dense_distance: float = 0.0
+    dense_similarity: float = 0.0
+    reranker_score: Optional[float] = None
     text: str
 
 
 class QueryResponse(BaseModel):
     question: str
     answer: str
+    retrieval: RetrievalSummary
     retrieved_chunks: List[RetrievedChunk]
 
 

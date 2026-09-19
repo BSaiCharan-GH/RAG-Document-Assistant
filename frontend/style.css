@@ -283,9 +283,32 @@ textarea {
   font-style: italic;
 }
 
+.retrieval-summary {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.retrieval-queries {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
 .source-item summary {
   cursor: pointer;
   font-weight: 600;
+}
+
+.source-meta {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .source-details {

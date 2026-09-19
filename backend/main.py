@@ -16,11 +16,13 @@ from backend.models import (
     HealthResponse,
     QueryRequest,
     QueryResponse,
+    RetrievalSummary,
     RetrievedChunk,
     UploadResponse,
 )
 from backend.pdf_processor import compute_file_hash, ensure_upload_dirs, extract_pdf_text, sanitize_filename, chunk_text
 from backend.rag import RAGService
+from backend.retrieval import RetrievalService
 from backend.vector_store import VectorStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -43,7 +45,8 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 vector_store = VectorStore()
 embedding_service = EmbeddingService()
-rag_service = RAGService(vector_store=vector_store, embedding_service=embedding_service)
+retrieval_service = RetrievalService(vector_store=vector_store, embedding_service=embedding_service)
+rag_service = RAGService(vector_store=vector_store, embedding_service=embedding_service, retrieval_service=retrieval_service)
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -143,18 +146,25 @@ async def query_documents(payload: QueryRequest) -> QueryResponse:
         raise HTTPException(status_code=404, detail="No indexed documents available. Upload a PDF first.")
 
     try:
-        retrieved, _ = rag_service.retrieve_context(payload.query, payload.top_k)
+        retrieved, retrieval_meta = rag_service.retrieve_context(payload.query, payload.top_k)
         context_texts = [item["text"] for item in retrieved]
         answer = rag_service.generate_answer(payload.query, context_texts)
         return QueryResponse(
             question=payload.query,
             answer=answer,
+            retrieval=RetrievalSummary(
+                candidate_count=int(retrieval_meta.get("candidate_count", len(retrieved))),
+                final_count=int(retrieval_meta.get("final_count", len(retrieved))),
+                retrieval_queries=[str(item) for item in retrieval_meta.get("retrieval_queries", [payload.query])],
+            ),
             retrieved_chunks=[
                 RetrievedChunk(
                     chunk_id=item.get("chunk_id", ""),
                     filename=item.get("filename", "unknown.pdf"),
                     page=item.get("page"),
-                    distance=float(item.get("distance", 0.0)),
+                    dense_distance=float(item.get("dense_distance", 0.0)),
+                    dense_similarity=float(item.get("dense_similarity", 1.0 - float(item.get("dense_distance", 0.0)))),
+                    reranker_score=float(item["reranker_score"]) if item.get("reranker_score") is not None else None,
                     text=item.get("text", ""),
                 )
                 for item in retrieved

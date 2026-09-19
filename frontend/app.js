@@ -12,6 +12,7 @@ const refreshDocsButton = document.getElementById('refreshDocsButton');
 const questionInput = document.getElementById('questionInput');
 const askButton = document.getElementById('askButton');
 const queryStatus = document.getElementById('queryStatus');
+const retrievalSummary = document.getElementById('retrievalSummary');
 const answerContent = document.getElementById('answerContent');
 const sourcesList = document.getElementById('sourcesList');
 
@@ -229,6 +230,30 @@ async function deleteDocument(documentId) {
   }
 }
 
+function renderRetrievalSummary(data) {
+  const retrieval = data && data.retrieval ? data.retrieval : null;
+  clearChildren(retrievalSummary);
+
+  if (!retrieval) {
+    retrievalSummary.classList.add('hidden');
+    return;
+  }
+
+  const summaryText = `${retrieval.candidate_count ?? 0} candidates retrieved → ${retrieval.final_count ?? 0} final sources`;
+  const summaryNode = document.createElement('div');
+  summaryNode.textContent = summaryText;
+  retrievalSummary.appendChild(summaryNode);
+
+  if (retrieval.retrieval_queries && retrieval.retrieval_queries.length > 0) {
+    const queriesNode = document.createElement('div');
+    queriesNode.className = 'retrieval-queries';
+    queriesNode.textContent = `Retrieval queries: ${retrieval.retrieval_queries.join(' | ')}`;
+    retrievalSummary.appendChild(queriesNode);
+  }
+
+  retrievalSummary.classList.remove('hidden');
+}
+
 function renderSources(chunks) {
   clearChildren(sourcesList);
   sourcesList.classList.remove('empty');
@@ -247,13 +272,19 @@ function renderSources(chunks) {
     details.open = true;
 
     const summary = document.createElement('summary');
-    summary.textContent = `${chunk.filename} • Page ${chunk.page ?? 'N/A'} • Distance ${chunk.distance}`;
+    const denseSimilarity = Number.isFinite(chunk.dense_similarity) ? chunk.dense_similarity.toFixed(4) : 'N/A';
+    const rerankerScore = Number.isFinite(chunk.reranker_score) ? chunk.reranker_score.toFixed(4) : 'N/A';
+    summary.textContent = `${chunk.filename} • Page ${chunk.page ?? 'N/A'} • Dense ${denseSimilarity} • Re-ranker ${rerankerScore}`;
+
+    const meta = document.createElement('div');
+    meta.className = 'source-meta';
+    meta.textContent = `Dense distance: ${Number.isFinite(chunk.dense_distance) ? chunk.dense_distance.toFixed(4) : 'N/A'} • Dense similarity: ${denseSimilarity} • Re-ranker score: ${rerankerScore}`;
 
     const sourceText = document.createElement('div');
     sourceText.className = 'source-details';
     sourceText.textContent = chunk.text || '';
 
-    details.append(summary, sourceText);
+    details.append(summary, meta, sourceText);
     sourcesList.appendChild(details);
   });
 }
@@ -279,6 +310,7 @@ askButton.addEventListener('click', async () => {
       body: JSON.stringify({ query: question, top_k: 4 }),
     });
 
+    renderRetrievalSummary(data);
     renderAnswer(data.answer);
     renderSources(data.retrieved_chunks);
     setStatus(queryStatus, 'Answer generated successfully.', 'success');
