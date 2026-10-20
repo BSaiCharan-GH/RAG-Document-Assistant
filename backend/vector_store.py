@@ -9,8 +9,8 @@ from backend.config import settings
 
 
 class VectorStore:
-    def __init__(self) -> None:
-        persist_dir = Path(settings.CHROMA_PATH)
+    def __init__(self, persist_dir: str | Path | None = None) -> None:
+        persist_dir = Path(persist_dir or settings.CHROMA_PATH)
         persist_dir.mkdir(parents=True, exist_ok=True)
         self.client = chromadb.PersistentClient(path=str(persist_dir))
         self.collection = self.client.get_or_create_collection(
